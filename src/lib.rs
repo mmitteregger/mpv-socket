@@ -1,14 +1,12 @@
 // https://mpv.io/manual/master/#json-ipc
 
-pub use error::*;
-pub use property::*;
-
-use std::convert::{TryFrom, TryInto};
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::num::Wrapping;
 use std::path::Path;
 
+pub use error::*;
+pub use property::*;
 use protocol::{Command, CommandResponse, Request};
 
 use crate::event::{Event, PropertyChangeEvent, Reason};
@@ -197,9 +195,9 @@ impl MpvSocket {
 
     fn send_recv_convert_command<T>(&mut self, command: Command) -> Result<T>
     where
-        T: TryFrom<Value, Error = Error> + 'static,
+        T: TryFromValue,
     {
-        self.send_recv_command(command)?.try_into()
+        T::try_from(self.send_recv_command(command)?)
     }
 
     fn send_recv_command(&mut self, command: Command) -> Result<Value> {
@@ -373,7 +371,7 @@ mod tests {
         let mut mpv_socket = init();
         let volume = mpv_socket.get_property(Property::Volume).unwrap();
         log::info!("Volume: {:?}", volume);
-        assert!(matches!(volume, Value::Double(..)));
+        assert!(matches!(volume, Value::Number(..)));
     }
 
     #[test]
@@ -399,7 +397,7 @@ mod tests {
         let iter = mpv_socket.observe_property(Property::PlaybackTime).unwrap();
 
         for playback_time in iter.take(25).map(|result| result.unwrap()) {
-            if let Value::Double(playback_time) = playback_time {
+            if let Value::Number(playback_time) = playback_time {
                 log::info!("Playback time: {:?}", playback_time);
             }
         }
@@ -409,7 +407,7 @@ mod tests {
         for stream_pos in iter.take(25).map(|result| result.unwrap()) {
             match stream_pos {
                 Value::Number(stream_pos) => log::info!("Stream pos: {}", stream_pos),
-                Value::None => {}
+                Value::Null => {}
                 value => panic!(
                     "old or otherwise invalid property value returned: {:?}",
                     value

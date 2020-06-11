@@ -13,7 +13,7 @@ pub(crate) struct Request {
 pub(crate) struct CommandResponse {
     pub request_id: Option<i64>,
     pub error: Option<String>,
-    #[serde(default = "Value::none")]
+    #[serde(default)]
     pub data: Value,
 }
 

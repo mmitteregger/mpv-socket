@@ -1,8 +1,9 @@
 #![allow(deprecated)]
 
 use serde::Deserialize;
+use serde_json::Value;
 
-use crate::{Property, Value};
+use crate::Property;
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "event", rename_all = "kebab-case")]
@@ -70,9 +71,11 @@ pub struct PropertyChangeEvent {
     /// New property data.
     ///
     /// The type usually is the value type of the property,
-    /// but may also be `None` when the player is currently shutting down.
+    /// but may also be [`Value::Null`] when the player is currently shutting down.
     /// Therefore clients should always try to destructure the value instead of simply unwrapping.
-    #[serde(default = "Value::none")]
+    ///
+    /// [`Value::Null`]: ../enum.Value.html
+    #[serde(default)]
     pub data: Value,
 }
 
