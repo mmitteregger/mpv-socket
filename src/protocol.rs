@@ -25,16 +25,6 @@ pub(crate) struct EventResponse {
     pub error: Option<String>,
 }
 
-// impl<'a> From<&'a Event> for Value {
-//     fn from(event: &'a Event) -> Self {
-//         let value = match event {
-//             Event::PropertyChange(..) => "property-change",
-//             Event::Seek => "seek",
-//         };
-//         Value::from(value)
-//     }
-// }
-
 pub(crate) enum Command {
     ClientName,
     GetTimeUs,
@@ -42,7 +32,7 @@ pub(crate) enum Command {
     SetProperty(Property, Value),
     ObserveProperty(i64, Property),
     UnobserveProperty(i64),
-    RequestLogMessages,
+    // RequestLogMessages,
     // EnableEvent(EventType),
     // DisableEvent(EventType),
     GetVersion,
@@ -57,7 +47,7 @@ impl Command {
             Command::SetProperty(..) => "set_property",
             Command::ObserveProperty(..) => "observe_property",
             Command::UnobserveProperty(..) => "unobserve_property",
-            Command::RequestLogMessages => "request_log_messages",
+            // Command::RequestLogMessages => "request_log_messages",
             // Command::EnableEvent(..) => "enable_event",
             // Command::DisableEvent(..) => "disable_event",
             Command::GetVersion => "get_version",
@@ -72,7 +62,7 @@ impl Command {
             Command::SetProperty(property, value) => vec![property.into(), value.clone()],
             Command::ObserveProperty(id, property) => vec![(*id).into(), property.into()],
             Command::UnobserveProperty(id) => vec![(*id).into()],
-            Command::RequestLogMessages => vec![],
+            // Command::RequestLogMessages => vec![],
             // Command::EnableEvent(event) => vec![event.into()],
             // Command::DisableEvent(event) => vec![event.into()],
             Command::GetVersion => vec![],

@@ -1,16 +1,44 @@
-// https://mpv.io/manual/master/#json-ipc
+//! Client for the JSON-based IPC protocol of mpv sockets.
+//!
+//! Official documentation: [https://mpv.io/manual/master/#json-ipc](https://mpv.io/manual/master/#json-ipc)
+//!
+//! # Example:
+//!
+//! ```
+//! use mpv_socket::{MpvSocket, Error, Property};
+//!
+//! fn main() -> Result<(), Error> {
+//!     let mut mpv_socket = MpvSocket::connect(r#"\\.\pipe\mpv-socket"#)?;
+//!
+//!     let client_name = mpv_socket.client_name()?;
+//!     let version = mpv_socket.get_version()?;
+//!     let filename: String = mpv_socket.get_property(Property::Filename)?;
+//!
+//!     println!("Client name: {}", client_name);
+//!     println!("Version: {}", version);
+//!     println!("Filename: {}", filename);
+//!
+//!     // Observe property changes with a iterator based API:
+//!     for result in mpv_socket.observe_property(Property::PlaybackTime)?.take(10) {
+//!         let playback_time: f64 = result?;
+//!         println!("Playback time: {}", playback_time);
+//!     }
+//!
+//!     Ok(())
+//! }
+//! ```
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::num::Wrapping;
 use std::path::Path;
 
-pub use error::*;
-pub use property::*;
-use protocol::{Command, CommandResponse, Request};
+pub use crate::error::*;
+pub use crate::property::*;
 
 use crate::event::{Event, PropertyChangeEvent, Reason};
 use crate::protocol::EventResponse;
+use crate::protocol::{Command, CommandResponse, Request};
 
 mod error;
 pub mod event;
@@ -39,6 +67,7 @@ impl RequestId {
     }
 }
 
+/// Mpv socket connection.
 pub struct MpvSocket {
     socket: BufReader<Box<dyn ReadWrite>>,
     read_buf: Vec<u8>,
@@ -48,6 +77,17 @@ pub struct MpvSocket {
 
 #[cfg(target_os = "windows")]
 impl MpvSocket {
+    /// Connects to an mpv socket.
+    ///
+    /// The socket should be created when starting mpv via the `input-ipc-server` option, like
+    /// ```sh
+    /// mpv <file> --input-ipc-server=\\.\pipe\mpv-socket
+    /// ```
+    /// in which case the given path should be `\\.\pipe\mpv-socket`.
+    ///
+    /// It is recommended to use the [`raw string literal syntax`]: `r#"\\.\pipe\mpv-socket"#`
+    ///
+    /// [`raw string literal syntax`]: https://doc.rust-lang.org/reference/tokens.html#raw-string-literals
     pub fn connect<P: AsRef<Path>>(path: P) -> Result<MpvSocket> {
         log::info!("connecting to: {}", path.as_ref().display());
         let mut tries_left = 5u8;
@@ -115,8 +155,11 @@ impl MpvSocket {
     /// See [`Properties`] for more information about properties.
     ///
     /// [`Properties`]: https://mpv.io/manual/master/#properties
-    pub fn get_property(&mut self, property: Property) -> Result<Value> {
-        self.send_recv_command(Command::GetProperty(property))
+    pub fn get_property<T>(&mut self, property: Property) -> Result<T>
+    where
+        T: TryFromValue,
+    {
+        self.send_recv_convert_command(Command::GetProperty(property))
     }
 
     /// Set the given property to the given value.
@@ -124,30 +167,38 @@ impl MpvSocket {
     /// See [`Properties`] for more information about properties.
     ///
     /// [`Properties`]: https://mpv.io/manual/master/#properties
-    pub fn set_property(&mut self, property: Property, value: impl Into<Value>) -> Result<Value> {
-        self.send_recv_command(Command::SetProperty(property, value.into()))
+    pub fn set_property(&mut self, property: Property, value: impl Into<Value>) -> Result<()> {
+        let value = self.send_recv_command(Command::SetProperty(property, value.into()))?;
+        debug_assert_eq!(value, Value::Null);
+        Ok(())
     }
 
     /// Watch a property for changes.
     ///
     /// If the given property is changed,
-    /// then the iterator will return the next [`Value`].
+    /// then the iterator will return the next value.
+    ///
+    /// When the returned iterator returns `None`,
+    /// the player/socket is closed and thus the `MpvSocket` should also be dropped immediately.
+    /// All further calls will produce an error.
     ///
     /// See [`Properties`] for more information about properties.
     ///
     /// [`Properties`]: https://mpv.io/manual/master/#properties
-    /// [`Value`]: ./struct.Value.html
-    pub fn observe_property<'a>(
+    pub fn observe_property<'a, T>(
         &'a mut self,
         property: Property,
-    ) -> Result<impl Iterator<Item = Result<Value>> + 'a> {
+    ) -> Result<impl Iterator<Item = Result<T>> + 'a>
+    where
+        T: TryFromValue,
+    {
         self.send_recv_command(Command::ObserveProperty(1, property))?;
 
         Ok(
             EventIter::new(self, 1).filter_map(|event_response| match event_response {
                 Ok(event_response) => match event_response.event {
                     Event::PropertyChange(property_change_event) => {
-                        Some(Ok(property_change_event.data))
+                        Some(T::try_from(property_change_event.data))
                     }
                     _ => {
                         log::debug!("filtered event: {:?}", event_response);
@@ -162,12 +213,16 @@ impl MpvSocket {
     /// Watch properties for changes.
     ///
     /// If one of the given properties is changed,
-    /// then the iterator will return the next [`Event`].
+    /// then the iterator will return the next [`Property`].
+    ///
+    /// When the returned iterator returns `None`,
+    /// the player/socket is closed and thus the `MpvSocket` should also be dropped immediately.
+    /// All further calls will produce an error.
     ///
     /// See [`Properties`] for more information about properties.
     ///
     /// [`Properties`]: https://mpv.io/manual/master/#properties
-    /// [`Event`]: ./struct.Event.html
+    /// [`Property`]: ./enum.Property.html
     pub fn observe_properties<'a>(
         &'a mut self,
         properties: impl IntoIterator<Item = Property>,
@@ -193,6 +248,13 @@ impl MpvSocket {
         )
     }
 
+    /// Returns the client API version the C API of the remote mpv instance provides.
+    pub fn get_version(&mut self) -> Result<i64> {
+        self.send_recv_convert_command(Command::GetVersion)
+    }
+}
+
+impl MpvSocket {
     fn send_recv_convert_command<T>(&mut self, command: Command) -> Result<T>
     where
         T: TryFromValue,
@@ -340,6 +402,8 @@ impl<'a> Drop for EventIter<'a> {
     }
 }
 
+// These tests require a running mpv instance.
+// See `init()` function.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,7 +423,7 @@ mod tests {
     }
 
     #[test]
-    fn time_us() {
+    fn get_time_us() {
         let mut mpv_socket = init();
         let time_us = mpv_socket.get_time_us().unwrap();
         log::info!("Time microseconds: {}", time_us);
@@ -369,9 +433,25 @@ mod tests {
     #[test]
     fn get_property_volume() {
         let mut mpv_socket = init();
-        let volume = mpv_socket.get_property(Property::Volume).unwrap();
+        let volume: f64 = mpv_socket.get_property(Property::Volume).unwrap();
         log::info!("Volume: {:?}", volume);
-        assert!(matches!(volume, Value::Number(..)));
+        assert_ne!(volume, -1.0);
+    }
+
+    #[test]
+    fn get_property_filename() {
+        let mut mpv_socket = init();
+        let filename: String = mpv_socket.get_property(Property::Filename).unwrap();
+        log::info!("Filename: {}", filename);
+        assert!(!filename.is_empty());
+    }
+
+    #[test]
+    fn get_property_filename_no_ext() {
+        let mut mpv_socket = init();
+        let filename_no_ext: String = mpv_socket.get_property(Property::FilenameNoExt).unwrap();
+        log::info!("Filename/no-ext: {:?}", filename_no_ext);
+        assert!(!filename_no_ext.is_empty());
     }
 
     #[test]
@@ -386,7 +466,8 @@ mod tests {
         let mut mpv_socket = init();
         let playback_time_iter = mpv_socket.observe_property(Property::PlaybackTime).unwrap();
 
-        for playback_time in playback_time_iter.take(25) {
+        for result in playback_time_iter.take(25) {
+            let playback_time: f64 = result.unwrap();
             log::info!("Playback time: {:?}", playback_time);
         }
     }
@@ -396,7 +477,8 @@ mod tests {
         let mut mpv_socket = init();
         let iter = mpv_socket.observe_property(Property::PlaybackTime).unwrap();
 
-        for playback_time in iter.take(25).map(|result| result.unwrap()) {
+        for result in iter.take(25) {
+            let playback_time: Value = result.unwrap();
             if let Value::Number(playback_time) = playback_time {
                 log::info!("Playback time: {:?}", playback_time);
             }
@@ -404,7 +486,8 @@ mod tests {
 
         let iter = mpv_socket.observe_property(Property::StreamPos).unwrap();
 
-        for stream_pos in iter.take(25).map(|result| result.unwrap()) {
+        for result in iter.take(25) {
+            let stream_pos: Value = result.unwrap();
             match stream_pos {
                 Value::Number(stream_pos) => log::info!("Stream pos: {}", stream_pos),
                 Value::Null => {}
@@ -427,8 +510,17 @@ mod tests {
             )
             .unwrap();
 
-        for property in iter.take(25).map(|result| result.unwrap()) {
+        for result in iter.take(25) {
+            let property = result.unwrap();
             log::info!("Property: {:?}", property);
         }
+    }
+
+    #[test]
+    fn get_version() {
+        let mut mpv_socket = init();
+        let version = mpv_socket.get_version().unwrap();
+        log::info!("Version: {}", version);
+        assert_ne!(version, 0);
     }
 }

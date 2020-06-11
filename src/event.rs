@@ -1,3 +1,7 @@
+//! Mpv events.
+//!
+//! Official documentation: [https://mpv.io/manual/master/#list-of-events](https://mpv.io/manual/master/#list-of-events)
+
 #![allow(deprecated)]
 
 use serde::Deserialize;
@@ -5,6 +9,7 @@ use serde_json::Value;
 
 use crate::Property;
 
+/// Mpv event variants.
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(tag = "event", rename_all = "kebab-case")]
 pub enum Event {
@@ -33,11 +38,34 @@ pub enum Event {
     ///
     /// [`Details on the script initialization and lifecycle`]: https://mpv.io/manual/master/#details-on-the-script-initialization-and-lifecycle
     Shutdown,
+    /// Receives messages enabled with `mpv_request_log_messages()`
+    ///
+    /// (Lua: `mp.enable_messages`).
+    LogMessage(LogMessageEvent),
+    /// Hook.
+    Hook(HookEvent),
+    /// See C API.
+    #[doc(hidden)]
+    GetPropertyReply(Value),
+    /// See C API.
+    #[doc(hidden)]
+    SetPropertyReply(Value),
+    /// This is one of the commands for which the `error` field is meaningful.
+    //
+    // JSON IPC and Lua and possibly other backends treat this specially
+    // and may not pass the actual event to the user.
+    //
+    // See C API.
+    #[doc(hidden)]
+    CommandReply(Value),
+    /// Lua and possibly other backends treat this specially
+    /// and may not pass the actual event to the user.
+    #[doc(hidden)]
+    ClientMessage(Value),
     /// Happens on video output or filter reconfig.
     VideoReconfig,
     /// Happens on audio output or filter reconfig.
     AudioReconfig,
-
     /// Deprecated: Use `observe_property` instead.
     #[deprecated]
     TracksChanged,
@@ -62,8 +90,25 @@ pub enum Event {
     /// Deprecated: Use `observe_property` instead.
     #[deprecated]
     ChapterChange,
+
+    /// Non-exhaustive enums could have additional variants added in future.
+    ///
+    /// Therefore, when matching against variants of non-exhaustive enums,
+    /// an extra wildcard arm must be added to account for any future variants.
+    #[doc(hidden)]
+    __NonExhaustive,
+
+    /// Unknown event.
+    ///
+    /// Unknown events should not cause deserialization errors, so they are caught here.
+    #[serde(other)]
+    #[doc(hidden)]
+    Other,
 }
 
+/// Payload for [`Event::PropertyChange`].
+///
+/// [`Event::PropertyChange`]: ./enum.Event.html#variant.PropertyChange
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct PropertyChangeEvent {
     /// The property whose value was changed.
@@ -79,12 +124,18 @@ pub struct PropertyChangeEvent {
     pub data: Value,
 }
 
+/// Payload for [`Event::StartFile`].
+///
+/// [`Event::StartFile`]: ./enum.Event.html#variant.StartFile
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct StartFileEvent {
     /// Playlist entry ID of the file being loaded now.
     pub playlist_entry_id: i64,
 }
 
+/// Payload for [`Event::EndFile`].
+///
+/// [`Event::EndFile`]: ./enum.Event.html#variant.EndFile
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct EndFileEvent {
     /// Why the playback has ended.
@@ -129,6 +180,9 @@ pub struct EndFileEvent {
     pub playlist_insert_num_entries: Option<i64>,
 }
 
+/// Reason for [`Event::EndFile`].
+///
+/// [`Event::EndFile`]: ./enum.Event.html#variant.EndFile
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Reason {
@@ -156,4 +210,41 @@ pub enum Reason {
     /// (Likewise, it could happen that your script gets reason strings
     /// that did not exist yet at the time your script was written.)
     Unknown,
+}
+
+/// Payload for [`Event::LogMessage`].
+///
+/// [`Event::LogMessage`]: ./enum.Event.html#variant.LogMessage
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct LogMessageEvent {
+    /// The module prefix, identifies the sender of the message.
+    ///
+    /// This is what the terminal player puts in front of the message text
+    /// when using the `--v` option, and is also what is used for `--msg-level`.
+    prefix: String,
+    /// The log level as string.
+    ///
+    /// See `msg.log` for possible log level names.
+    /// Note that later versions of mpv might add new levels
+    /// or remove (undocumented) existing ones.
+    level: String,
+    /// The log message.
+    ///
+    /// The text will end with a newline character.
+    /// Sometimes it can contain multiple lines.
+    ///
+    /// Keep in mind that these messages are meant to be hints for humans.
+    /// You should not parse them, and prefix/level/text of messages might change any time.
+    text: String,
+}
+
+/// Payload for [`Event::Hook`].
+///
+/// [`Event::Hook`]: ./enum.Event.html#variant.Hook
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct HookEvent {
+    /// ID to pass to `mpv_hook_continue()`.
+    ///
+    /// The Lua scripting wrapper provides a better API around this with `mp.add_hook()`.
+    hook_id: Value,
 }

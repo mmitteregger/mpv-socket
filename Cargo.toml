@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "JSON-based IPC library for mpv - currently Windows only"
 authors = ["Michael Mitteregger <michael.mitteregger@gmx.at>"]
 edition = "2018"
-repository = "https://github.com/mmitteregger/mpv-ipc"
+repository = "https://github.com/mmitteregger/mpv-socket"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
