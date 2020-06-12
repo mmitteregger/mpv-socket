@@ -1,6 +1,8 @@
 use mpv_socket::{Error, MpvSocket, Property};
 
 fn main() -> Result<(), Error> {
+    pretty_env_logger::init_timed();
+
     let mut mpv_socket = MpvSocket::connect(r#"\\.\pipe\mpv-socket"#)?;
 
     let client_name = mpv_socket.client_name()?;
@@ -17,7 +19,7 @@ fn main() -> Result<(), Error> {
         .take(10)
     {
         let playback_time: f64 = result?;
-        println!("Playback time: {}", playback_time);
+        log::info!("Playback time: {}", playback_time);
     }
 
     Ok(())

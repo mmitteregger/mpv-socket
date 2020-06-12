@@ -34,9 +34,8 @@ use std::num::Wrapping;
 use std::path::Path;
 
 pub use crate::error::*;
-pub use crate::property::*;
-
 use crate::event::{Event, PropertyChangeEvent, Reason};
+pub use crate::property::*;
 use crate::protocol::EventResponse;
 use crate::protocol::{Command, CommandResponse, Request};
 
@@ -194,20 +193,13 @@ impl MpvSocket {
     {
         self.send_recv_command(Command::ObserveProperty(1, property))?;
 
-        Ok(
-            EventIter::new(self, 1).filter_map(|event_response| match event_response {
-                Ok(event_response) => match event_response.event {
-                    Event::PropertyChange(property_change_event) => {
-                        Some(T::try_from(property_change_event.data))
-                    }
-                    _ => {
-                        log::debug!("filtered event: {:?}", event_response);
-                        None
-                    }
-                },
-                Err(error) => Some(Err(error)),
-            }),
-        )
+        let iter = EventIter::new(self, 1)
+            .filter_map(Self::filter_property_change_event)
+            .map(|property_change_event| match property_change_event {
+                Ok(event) => T::try_from(event.data),
+                Err(error) => Err(error),
+            });
+        Ok(iter)
     }
 
     /// Watch properties for changes.
@@ -233,19 +225,36 @@ impl MpvSocket {
             self.send_recv_command(Command::ObserveProperty(property_index, property))?;
         }
 
-        Ok(
-            EventIter::new(self, property_index).filter_map(
-                |event_response| match event_response {
-                    Ok(event_response) => match event_response.event {
-                        Event::PropertyChange(property_change_event) => {
-                            Some(Ok(property_change_event))
+        let iter = EventIter::new(self, property_index) //
+            .filter_map(Self::filter_property_change_event);
+        Ok(iter)
+    }
+
+    fn filter_property_change_event(
+        event_response: Result<EventResponse>,
+    ) -> Option<Result<PropertyChangeEvent>> {
+        match event_response {
+            Ok(event_response) => {
+                let event = event_response.event;
+                match event {
+                    Event::PropertyChange(property_change_event) => {
+                        let value = &property_change_event.data;
+                        match value {
+                            Value::Null => {
+                                log::debug!("filtered event: {:?}", property_change_event);
+                                None
+                            }
+                            _ => Some(Ok(property_change_event)),
                         }
-                        _ => None,
-                    },
-                    Err(error) => Some(Err(error)),
-                },
-            ),
-        )
+                    }
+                    event => {
+                        log::debug!("filtered event: {:?}", event);
+                        None
+                    }
+                }
+            }
+            Err(error) => Some(Err(error)),
+        }
     }
 
     /// Returns the client API version the C API of the remote mpv instance provides.
