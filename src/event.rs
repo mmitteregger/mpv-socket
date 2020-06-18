@@ -130,7 +130,7 @@ pub struct PropertyChangeEvent {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct StartFileEvent {
     /// Playlist entry ID of the file being loaded now.
-    pub playlist_entry_id: i64,
+    pub playlist_entry_id: Option<i64>,
 }
 
 /// Payload for [`Event::EndFile`].
@@ -139,13 +139,13 @@ pub struct StartFileEvent {
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct EndFileEvent {
     /// Why the playback has ended.
-    pub reason: Reason,
+    pub reason: Option<Reason>,
     /// Playlist entry ID of the file that was being played
     /// or attempted to be played.
     ///
     /// This has the same value as the playlist_entry_id field
     /// in the corresponding start-file event.
-    pub playlist_entry_id: i64,
+    pub playlist_entry_id: Option<i64>,
     /// Set to mpv error string describing the approximate reason why playback failed.
     ///
     /// Unset if no error known.

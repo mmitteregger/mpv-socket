@@ -1,7 +1,7 @@
 [package]
 name = "mpv-socket"
 version = "0.1.0"
-description = "JSON-based IPC library for mpv - currently Windows only"
+description = "JSON-based IPC library for mpv"
 authors = ["Michael Mitteregger <michael.mitteregger@gmx.at>"]
 edition = "2018"
 repository = "https://github.com/mmitteregger/mpv-socket"

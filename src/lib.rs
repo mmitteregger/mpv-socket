@@ -8,7 +8,12 @@
 //! use mpv_socket::{MpvSocket, Error, Property};
 //!
 //! fn main() -> Result<(), Error> {
-//!     let mut mpv_socket = MpvSocket::connect(r#"\\.\pipe\mpv-socket"#)?;
+//!     let socket_path = if cfg!(windows) {
+//!         r#"\\.\pipe\mpv-socket"#
+//!     } else {
+//!         "/tmp/mpv-socket"
+//!     };
+//!     let mut mpv_socket = MpvSocket::connect(socket_path)?;
 //!
 //!     let client_name = mpv_socket.client_name()?;
 //!     let version = mpv_socket.get_version()?;
@@ -28,13 +33,12 @@
 //! }
 //! ```
 
-use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::num::Wrapping;
 use std::path::Path;
 
 pub use crate::error::*;
-use crate::event::{Event, PropertyChangeEvent, Reason};
+use crate::event::{Event, PropertyChangeEvent};
 pub use crate::property::*;
 use crate::protocol::EventResponse;
 use crate::protocol::{Command, CommandResponse, Request};
@@ -80,7 +84,7 @@ impl MpvSocket {
     ///
     /// The socket should be created when starting mpv via the `input-ipc-server` option, like
     /// ```sh
-    /// mpv <file> --input-ipc-server=\\.\pipe\mpv-socket
+    /// mpv.exe --input-ipc-server=\\.\pipe\mpv-socket [file|url|...]
     /// ```
     /// in which case the given path should be `\\.\pipe\mpv-socket`.
     ///
@@ -88,6 +92,8 @@ impl MpvSocket {
     ///
     /// [`raw string literal syntax`]: https://doc.rust-lang.org/reference/tokens.html#raw-string-literals
     pub fn connect<P: AsRef<Path>>(path: P) -> Result<MpvSocket> {
+        use std::fs::OpenOptions;
+
         log::info!("connecting to: {}", path.as_ref().display());
         let mut tries_left = 5u8;
 
@@ -124,6 +130,38 @@ impl MpvSocket {
 
             return Err(format!("failed to open mpv socket: {}", error).into());
         };
+
+        Ok(MpvSocket {
+            socket: BufReader::new(Box::new(socket)),
+            read_buf: Vec::with_capacity(128),
+            last_request_id: RequestId::new(),
+            closed: false,
+        })
+    }
+}
+
+#[cfg(target_os = "linux")]
+impl MpvSocket {
+    /// Connects to an mpv socket.
+    ///
+    /// The socket should be created when starting mpv via the `input-ipc-server` option, like
+    /// ```sh
+    /// mpv --input-ipc-server=/tmp/mpv-socket [file|url|...]
+    /// ```
+    /// in which case the given path should be `/tmp/mpv-socket`.
+    pub fn connect<P: AsRef<Path>>(path: P) -> Result<MpvSocket> {
+        use std::os::unix::net::UnixStream;
+        use std::time::Duration;
+
+        log::info!("connecting to: {}", path.as_ref().display());
+
+        let socket = UnixStream::connect(path.as_ref())
+            .map_err(|error| Error::from(format!("failed to open mpv socket: {}", error)))?;
+
+        socket.set_read_timeout(Some(Duration::from_secs(5)))
+            .map_err(|error| Error::from(format!("failed to set read timeout: {}", error)))?;
+        socket.set_write_timeout(Some(Duration::from_secs(5)))
+            .map_err(|error| Error::from(format!("failed to set write timeout: {}", error)))?;
 
         Ok(MpvSocket {
             socket: BufReader::new(Box::new(socket)),
@@ -178,8 +216,8 @@ impl MpvSocket {
     /// then the iterator will return the next value.
     ///
     /// When the returned iterator returns `None`,
-    /// the player/socket is closed and thus the `MpvSocket` should also be dropped immediately.
-    /// All further calls will produce an error.
+    /// the player, socket or file is closed and thus the `MpvSocket` should also be dropped.
+    /// All further calls may produce an error.
     ///
     /// See [`Properties`] for more information about properties.
     ///
@@ -208,8 +246,8 @@ impl MpvSocket {
     /// then the iterator will return the next [`Property`].
     ///
     /// When the returned iterator returns `None`,
-    /// the player/socket is closed and thus the `MpvSocket` should also be dropped immediately.
-    /// All further calls will produce an error.
+    /// the player, socket or file is closed and thus the `MpvSocket` should also be dropped.
+    /// All further calls may produce an error.
     ///
     /// See [`Properties`] for more information about properties.
     ///
@@ -355,14 +393,7 @@ impl<'a> Iterator for EventIter<'a> {
         };
 
         match &res_event.event {
-            Event::Shutdown => {
-                self.mpv.closed = true;
-            }
-            Event::EndFile(end_file_event) => {
-                if end_file_event.reason == Reason::Quit {
-                    self.mpv.closed = true;
-                }
-            }
+            Event::Shutdown | Event::EndFile(..) => self.mpv.closed = true,
             _ => {}
         }
 
@@ -398,7 +429,15 @@ impl<'a> Drop for EventIter<'a> {
             Ok(json) => json,
             Err(error) => {
                 if let Some(io_error) = error.downcast_ref::<std::io::Error>() {
+                    #[cfg(target_os = "windows")]
                     if io_error.raw_os_error() == Some(ERROR_NO_DATA) {
+                        // Ignore this error,
+                        // a closed media player is not a problem
+                        // and will leave no trace of stale or wrong state.
+                        return;
+                    }
+
+                    if io_error.kind() == std::io::ErrorKind::BrokenPipe {
                         // Ignore this error,
                         // a closed media player is not a problem
                         // and will leave no trace of stale or wrong state.
@@ -421,6 +460,12 @@ mod tests {
     fn init() -> MpvSocket {
         let _ = pretty_env_logger::try_init_timed();
         MpvSocket::connect(r"\\.\pipe\mpv-socket").unwrap()
+    }
+
+    #[cfg(target_os = "linux")]
+    fn init() -> MpvSocket {
+        let _ = pretty_env_logger::try_init_timed();
+        MpvSocket::connect("/tmp/mpv-socket").unwrap()
     }
 
     #[test]

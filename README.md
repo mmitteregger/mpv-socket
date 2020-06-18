@@ -3,14 +3,30 @@ mpv-socket
 
 A Rust library for the JSON-based IPC protocol of mpv.
 
-It currently supports Windows only, but this limitation will be lifted in the future.
-
 ## Example
 
 Here's a simple example.
 
-Please note that it requires a running mpv player that is started with the 
-`--input-ipc-server=\\.\pipe\mpv-socket` option, otherwise `MpvSocket::connect(...)` will fail. 
+### Prerequisite
+
+Please note that this requires a running mpv player that is started with the `--input-ipc-server` option, 
+otherwise `MpvSocket::connect(...)` will fail.
+
+On Windows this might look like:
+```sh
+mpv.exe --input-ipc-server=\\.\pipe\mpv-socket [file|url|...]
+```
+
+On Linux this might look like:
+```sh
+mpv --input-ipc-server=/tmp/mpv-socket [file|url|...]
+```
+
+### Rust Application
+
+Now let's get to the Rust code.\
+This example uses the Windows connect string, 
+replace it with the `input-ipc-server` path given to mpv like `/tmp/mpv-socket` when on Linux.
 
 ```rust
 use mpv_socket::{Error, MpvSocket, Property};
