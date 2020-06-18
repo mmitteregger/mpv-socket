@@ -371,11 +371,24 @@ impl<'a> Iterator for EventIter<'a> {
             return None;
         }
 
-        self.mpv.read_buf.clear();
-        let num_bytes = match self.mpv.socket.read_until(b'\n', &mut self.mpv.read_buf) {
-            Ok(num_bytes) => num_bytes,
-            Err(error) => return Some(Err(error.into())),
+        let num_bytes = loop {
+            self.mpv.read_buf.clear();
+
+            match self.mpv.socket.read_until(b'\n', &mut self.mpv.read_buf) {
+                Ok(num_bytes) => break num_bytes,
+                Err(io_error) => {
+                    if io_error.kind() == std::io::ErrorKind::WouldBlock {
+                        // Read timeout reached
+                        // can be ignored during event iteration
+                        log::trace!("ignoring WouldBlock error while advancing EventIter");
+                        continue;
+                    }
+
+                    return Some(Err(io_error.into()));
+                },
+            }
         };
+
         if num_bytes == 0 {
             return None;
         }
@@ -434,6 +447,7 @@ impl<'a> Drop for EventIter<'a> {
                         // Ignore this error,
                         // a closed media player is not a problem
                         // and will leave no trace of stale or wrong state.
+                        log::trace!("ignoring ERROR_NO_DATA while dropping EventIter");
                         return;
                     }
 
@@ -441,6 +455,7 @@ impl<'a> Drop for EventIter<'a> {
                         // Ignore this error,
                         // a closed media player is not a problem
                         // and will leave no trace of stale or wrong state.
+                        log::trace!("ignoring BrokenPipe error while dropping EventIter");
                         return;
                     }
                 }
