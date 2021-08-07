@@ -30,24 +30,24 @@ macro_rules! ffi_fn {
     };
 }
 
-macro_rules! error {
+macro_rules! ffi_error {
     ($msg:literal $(,)?) => {
-        Box::into_raw(Box::new($crate::error::mpv_socket_error($msg.into())))
+        Box::into_raw(Box::new($crate::ffi::error::mpv_socket_error($msg.into())))
     };
     ($err:expr $(,)?) => ({
-        Box::into_raw(Box::new($crate::error::mpv_socket_error($err.into())))
+        Box::into_raw(Box::new($crate::ffi::error::mpv_socket_error($err.into())))
     });
     ($fmt:expr, $($arg:tt)*) => {
-        Box::into_raw(Box::new($crate::error::mpv_socket_error(format!($fmt, $($arg)*).into())))
+        Box::into_raw(Box::new($crate::ffi::error::mpv_socket_error(format!($fmt, $($arg)*).into())))
     };
 }
 
-macro_rules! try_or_bail {
+macro_rules! ffi_try {
     ($expr:expr, $result:expr $(,)?) => {{
         match $expr {
             Ok(value) => value,
             Err(error) => {
-                $result.error = error!(error);
+                $result.error = ffi_error!(error);
                 return $result;
             }
         }

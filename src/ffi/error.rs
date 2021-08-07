@@ -1,11 +1,3 @@
-#[repr(C)]
-pub enum mpv_socket_code {
-    /// All is well.
-    MPV_SOCKET_E_OK,
-    /// General error, details in the `mpv_socket_error *`.
-    MPV_SOCKET_E_ERROR,
-}
-
 pub struct mpv_socket_error(pub(crate) Box<dyn std::error::Error + Send + Sync + 'static>);
 
 impl mpv_socket_error {

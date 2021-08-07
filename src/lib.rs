@@ -49,6 +49,9 @@ mod property;
 pub(crate) mod protocol;
 mod serde_impl;
 
+#[cfg(feature = "ffi")]
+pub mod ffi;
+
 trait ReadWrite: Read + Write {}
 impl<T: Read + Write> ReadWrite for T {}
 
@@ -158,9 +161,11 @@ impl MpvSocket {
         let socket = UnixStream::connect(path.as_ref())
             .map_err(|error| Error::from(format!("failed to open mpv socket: {}", error)))?;
 
-        socket.set_read_timeout(Some(Duration::from_secs(10)))
+        socket
+            .set_read_timeout(Some(Duration::from_secs(10)))
             .map_err(|error| Error::from(format!("failed to set read timeout: {}", error)))?;
-        socket.set_write_timeout(Some(Duration::from_secs(10)))
+        socket
+            .set_write_timeout(Some(Duration::from_secs(10)))
             .map_err(|error| Error::from(format!("failed to set write timeout: {}", error)))?;
 
         Ok(MpvSocket {
@@ -385,7 +390,7 @@ impl<'a> Iterator for EventIter<'a> {
                     }
 
                     return Some(Err(io_error.into()));
-                },
+                }
             }
         };
 

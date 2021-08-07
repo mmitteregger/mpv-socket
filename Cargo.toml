@@ -6,10 +6,19 @@ authors = ["Michael Mitteregger <michael.mitteregger@gmx.at>"]
 edition = "2018"
 repository = "https://github.com/mmitteregger/mpv-socket"
 
+[lib]
+name = "mpv_socket"
+crate-type = ["lib", "staticlib", "cdylib"]
+
+[features]
+default = []
+ffi = ["libc"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 log = "0.4"
+libc = { version = "0.2", optional = true }
 
 [dev-dependencies]
 pretty_env_logger = "0.4"

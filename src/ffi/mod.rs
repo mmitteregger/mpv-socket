@@ -6,7 +6,7 @@
 use std::ffi::CStr;
 use std::ptr;
 
-use crate::error::mpv_socket_error;
+use crate::ffi::error::mpv_socket_error;
 
 #[macro_use]
 mod macros;
@@ -22,7 +22,7 @@ ffi_fn! {
     } ?= std::ptr::null()
 }
 
-pub struct mpv_socket(pub(crate) ::mpv_socket::MpvSocket);
+pub struct mpv_socket(pub(crate) crate::MpvSocket);
 
 #[repr(C)]
 pub struct mpv_socket_connect_result {
@@ -46,12 +46,12 @@ ffi_fn! {
         let path = match unsafe { CStr::from_ptr(path) }.to_str() {
             Ok(path) => path,
             Err(error) => {
-                result.error = error!("invalid path: {}", error);
+                result.error = ffi_error!("invalid path: {}", error);
                 return result;
             }
         };
 
-        let socket = try_or_bail!(::mpv_socket::MpvSocket::connect(path), result);
+        let socket = ffi_try!(crate::MpvSocket::connect(path), result);
 
         result.socket = Box::into_raw(Box::new(mpv_socket(socket)));
         return result;
@@ -76,18 +76,18 @@ ffi_fn! {
         let property_str = unsafe { CStr::from_ptr(property) }.to_str().unwrap();
         let property = match serde_json::from_str(&format!("\"{}\"", property_str)) {
             Ok(property) => property,
-            Err(error) => return error!("invalid property \"{}\": {}", property_str, error),
+            Err(error) => return ffi_error!("invalid property \"{}\": {}", property_str, error),
         };
 
         let iter = match socket.observe_property(property) {
             Ok(iter) => iter,
-            Err(error) => return error!(error),
+            Err(error) => return ffi_error!(error),
         };
 
         for result in iter {
             match result {
                 Ok(value) => unsafe { callback(value, context) },
-                Err(error) => return error!(error),
+                Err(error) => return ffi_error!(error),
             }
         }
 
